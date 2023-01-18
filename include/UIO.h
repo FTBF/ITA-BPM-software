@@ -16,7 +16,7 @@ public:
 
     uint32_t read(const uint32_t reg);
 
-    inline uint32_t& operator[](const uint32_t& reg)
+    inline volatile uint32_t& operator[](const uint32_t& reg)
     {
 	return memptr_[reg];
     }
@@ -29,7 +29,7 @@ public:
 private:
     int openByInstance_id(const std::string& instance_id);
     
-    uint32_t * memptr_;
+    volatile uint32_t * memptr_;
     int fd_;
 	
 };
