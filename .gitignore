@@ -3,3 +3,6 @@
 
 *.o
 *.d
+
+bin/
+build/
