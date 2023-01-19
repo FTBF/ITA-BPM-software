@@ -1,7 +1,10 @@
 #include "UIO.h"
 #include "LTC2333.h"
 
+#include <zmq.h>
+#include "yaml-cpp/yaml.h"
 #include <iostream>
+
 
 int main()
 {
