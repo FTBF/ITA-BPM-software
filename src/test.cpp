@@ -185,13 +185,12 @@ public:
     int fd_;
     uint32_t* dma_;
     uint32_t count_, dmaSize_;
-    const uint32_t command_;
+    static constexpr uint32_t IRQCommand_ = 1;
     Buffer sgBuf_;
     uint32_t nSGBuf_;
-    std::vector<uint32_t> tailPtrRing_; 
-    uint32_t nextTailPtr_;
+    uint32_t lastTailPtr_;
 
-    DMACtrl(const std::string& name) : command_(1), sgBuf_("udmabuf1", false), nSGBuf_(0), nextTailPtr_(0)
+    DMACtrl(const std::string& name) : sgBuf_("udmabuf1", false), nSGBuf_(0), lastTailPtr_(0)
     {
         if ((fd_ = open(("/dev/"+name).c_str(), O_RDWR | O_SYNC)) == -1) 
         {
@@ -221,24 +220,40 @@ public:
         }
     }
 
-    void configureSGBuf(const Buffer& buf, const uint32_t length, const uint32_t sa)
+    void configureSGBuf(const Buffer& buf, const uint32_t length, const uint8_t chipMask)
     {
-        tailPtrRing_.clear();
-        nextTailPtr_ = 0;
-        nSGBuf_ = buf.size()/length;
+        const uint32_t sas[] = {
+            0x76000000,
+            0x76010000,
+            0x76020000,
+            0x76030000,
+            0x76040000,
+            0x76050000,
+            0x76060000,
+            0x76070000,
+        };
+        nSGBuf_ = 0;
         for(unsigned int i = 0; i < sgBuf_.size()/4; ++i) sgBuf_[i] = 0;
-        for(unsigned int i = 0; i < nSGBuf_; ++i)
+        for(unsigned int i = 0; i < 8; ++i)
         {
-            sgBuf_[0 + i*128/4] = sgBuf_.physAddr() + 128*((i+1)%nSGBuf_);
-            sgBuf_[2 + i*128/4] = sa;
-            sgBuf_[4 + i*128/4] = buf.physAddr() + length*i;
-            sgBuf_[6 + i*128/4] = length;
-
-            tailPtrRing_.push_back(sgBuf_.physAddr() + 128*(i%nSGBuf_));
+            if((1 << i) & chipMask)
+            {
+                sgBuf_[0 + nSGBuf_*128/4] = sgBuf_.physAddr() + (nSGBuf_ + 1)*128;
+                sgBuf_[2 + nSGBuf_*128/4] = sas[i];
+                sgBuf_[4 + nSGBuf_*128/4] = buf.physAddr() + length*nSGBuf_;
+                sgBuf_[6 + nSGBuf_*128/4] = length;
+                ++nSGBuf_;
+            }
         }
+        //close pointer ring
+        sgBuf_[0 + (nSGBuf_-1)*128/4] = sgBuf_.physAddr();
         curdescPtr(sgBuf_.physAddr());
-    }
+        lastTailPtr_ = sgBuf_.physAddr() + (nSGBuf_ - 1)*128;
 
+        //set interrupt coalessing
+        dma_[0] = (0xff00ffff & dma_[0]) | (nSGBuf_ << 16);
+    }
+    
     inline uint32_t nSGBuf()
     {
         return nSGBuf_;
@@ -269,12 +284,9 @@ public:
         dma_[4] = ptr;
     }
 
-    inline uint32_t nextTaildescPtr()
+    inline void startSG()
     {
-        dma_[4] = tailPtrRing_[nextTailPtr_];
-        uint32_t ntailPtr = nextTailPtr_;
-        nextTailPtr_ = (nextTailPtr_ + 1)%nSGBuf_;
-        return ntailPtr;
+        dma_[4] = lastTailPtr_;
     }
 
     inline bool isIdle()
@@ -322,7 +334,7 @@ public:
     inline void IRQReset()
     {
         dma_[1] = 1 << 12;
-        write(fd_, &command_, 4);
+        write(fd_, &IRQCommand_, 4);
     }
 
     inline void transfer(uint32_t sa, uint32_t da, uint32_t size)
@@ -343,31 +355,34 @@ public:
 
 int main()
 {
-    const int READS_PER_TRIGGER = 128 + 1;
+    const int READS_PER_TRIGGER = 512 + 1;
     const int NUM_TRIGGERS = 1000;
+    uint32_t chipMask = 0x0f;
 
     uint32_t buff[READS_PER_TRIGGER*8];
 
+    //LED control gpio
     UIO gpio("axi-gpio-0");
-    gpio[0]=042;
-
-    DMACtrl dma_ctrl("uio0");
-    dma_ctrl.reset();
-
-    usleep(1000);
-    
-    dma_ctrl.keyholeRead(true);
-    dma_ctrl.IRQEnable(true);
-    dma_ctrl.IRQReset();
+    gpio[0]=000;
 
     Buffer dma_buf("udmabuf0");
     dma_buf.syncSize(READS_PER_TRIGGER*8*4);
     dma_buf.syncOffset(0);
 
     dma_buf.syncCpu();
-    for(int i = 0; i < dma_buf.size()/4; ++i) dma_buf[i] = 0;
+    for(unsigned int i = 0; i < dma_buf.size()/4; ++i) dma_buf[i] = 0;
 
-    uint32_t chipMask = 0x0f;
+    
+    DMACtrl dma_ctrl("uio0");
+    dma_ctrl.reset();
+
+    usleep(1000);
+
+    dma_ctrl.enableSG(true);
+    dma_ctrl.keyholeRead(true);
+    dma_ctrl.IRQEnable(true);
+    dma_ctrl.IRQReset();
+    dma_ctrl.configureSGBuf(dma_buf, READS_PER_TRIGGER*sizeof(uint32_t), chipMask);
 
     LTC2333 ltc;
 
@@ -384,43 +399,41 @@ int main()
     ltc.trigger();
     while(!ltc.fifoReady(0, READS_PER_TRIGGER)) usleep(10);
 
-//    printf("cr: %8x\nsr: %8x\n", dma_ctrl.dma_[0], dma_ctrl.dma_[1]);
-
     for(int iTrig = 0; iTrig < NUM_TRIGGERS; ++iTrig)
     {
         while(ltc.writeInProgress()) usleep(10);
         ltc.trigger();
 
-        //for(int i = 0; i < READS_PER_TRIGGER*8; ++i) dma_buf[i] = 0;
         for(int i = 0; i < 8; ++i)
         {
             if((1 << i) & chipMask)
             {
         	ltc.wait(i, READS_PER_TRIGGER);
-
-                dma_buf.syncDevice();
-                dma_ctrl.transfer(0x76000000 + 0x10000*i, dma_buf.physAddr()+i*READS_PER_TRIGGER*sizeof(uint32_t), READS_PER_TRIGGER*sizeof(uint32_t));
-                dma_ctrl.IRQWait();
-                dma_ctrl.IRQReset();
-                dma_buf.syncCpu();
-
-        	memcpy(buff+i*(READS_PER_TRIGGER - 1), dma_buf.mem()+1+i*READS_PER_TRIGGER, (READS_PER_TRIGGER-1)*sizeof(uint32_t));
             }
         }
+
+        dma_buf.syncDevice();
+        dma_ctrl.startSG();
+        dma_ctrl.IRQWait();
+        dma_ctrl.IRQReset();
+        dma_buf.syncCpu();
+
+        memcpy(buff, dma_buf.mem(), dma_ctrl.nSGBuf_*READS_PER_TRIGGER*sizeof(uint32_t));
+
+        for(unsigned int i = 0; i < dma_ctrl.nSGBuf_; ++i) dma_ctrl.sgBufReset(i);
     }
-    
-    //usleep(10000);
+
     for(int i = 0; i < 4; ++i)
     {
         std::cout << "FIFOOcc: " << i << "\t" << ltc.getFIFOOcc(i) << std::endl;
     }
     
-    for(int i = 0; i < READS_PER_TRIGGER - 1; ++i)
+    for(int i = 1; i < READS_PER_TRIGGER; ++i)
     {
         std::cout << i << "\t" << (0x7&(buff[i] >> 3))
-        	       << "\t" << (0x7&(buff[i + READS_PER_TRIGGER - 1] >> 3))
-        	       << "\t" << (0x7&(buff[i + 2*(READS_PER_TRIGGER - 1)] >> 3))
-        	       << "\t" << (0x7&(buff[i + 3*(READS_PER_TRIGGER - 1)] >> 3)) << std::endl;
+        	       << "\t" << (0x7&(buff[i + READS_PER_TRIGGER] >> 3))
+        	       << "\t" << (0x7&(buff[i + 2*(READS_PER_TRIGGER)] >> 3))
+        	       << "\t" << (0x7&(buff[i + 3*(READS_PER_TRIGGER)] >> 3)) << std::endl;
     }
     ltc.enableRead(false);
 }
