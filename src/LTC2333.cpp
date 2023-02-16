@@ -1,6 +1,8 @@
 #include "LTC2333.h"
 #include <unistd.h>
 
+#include <iostream>
+
 LTC2333::LTC2333() : read_(READ_NAME), write_(WRITE_NAME)
 {
     for(int i = 0; i < 8; ++i)
@@ -12,7 +14,6 @@ LTC2333::LTC2333() : read_(READ_NAME), write_(WRITE_NAME)
 void LTC2333::configure(const uint32_t& chanMask, const uint32_t& range, const uint32_t& mode)
 {
     write_[1] = (chanMask & 0xff) | ((mode & 0x1) << 8) | ((range & 0x7) << 16);
-    write_[0] = 0x1;
 }
 
 void LTC2333::setReadDepth(const uint32_t& depth)
@@ -25,9 +26,24 @@ void LTC2333::setReadPeriod(const uint32_t& period)
     write_[2] = period;
 }
 
+bool LTC2333::writeInProgress()
+{
+    return write_[0] & 0x2;
+}
+
 void LTC2333::trigger()
 {
     write_[0] = 1;
+}
+
+bool LTC2333::fifoReady(const uint32_t& chan, const uint32_t& NR)
+{
+    return read_[1+4*chan] >= NR;
+}
+
+uint32_t LTC2333::getFIFOOcc(const uint32_t& chan)
+{
+    return read_[1+4*chan];
 }
 
 void LTC2333::enableRead(bool enable)
@@ -41,16 +57,21 @@ void LTC2333::reset()
     read_[0] = read_[0] | 0x1;
 }
 
-std::vector<uint32_t> LTC2333::read(const uint32_t& chip, const uint32_t& depth, const uint32_t& timeout)
+bool LTC2333::wait(const uint32_t& chip, const uint32_t& depth, const uint32_t& timeout)
 {
     uint32_t time = 0;
     while(read_[1 + chip*4] < depth)
     {
-	++time;
-	if(time >= timeout) return std::vector<uint32_t>();
-	else                usleep(100);
+    	++time;
+    	if(time >= timeout) return false;
+    	else                usleep(100);
     }
 
+    return true;
+}
+
+std::vector<uint32_t> LTC2333::read(const uint32_t& chip, const uint32_t& depth, const uint32_t& timeout)
+{
     std::vector<uint32_t> data(depth);
     for(uint32_t i = 0; i < depth; ++i)
     {
