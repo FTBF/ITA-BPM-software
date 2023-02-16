@@ -17,11 +17,19 @@ public:
 
     void setReadPeriod(const uint32_t& period);
 
+    bool fifoReady(const uint32_t& chan, const uint32_t& NR = 1);
+
+    bool writeInProgress();
+
+    uint32_t getFIFOOcc(const uint32_t& chan);
+
     void trigger();
 
     void enableRead(bool enable);
 
     void reset();
+
+    bool wait(const uint32_t& chip, const uint32_t& depth, const uint32_t& timeout = 1000);
 
     std::vector<uint32_t> read(const uint32_t& chip, const uint32_t& depth, const uint32_t& timeout = 1000);
 
