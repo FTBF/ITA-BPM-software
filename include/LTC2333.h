@@ -2,6 +2,8 @@
 #define LTC2333_H
 
 #include "UIO.h"
+#include "UDMABuf.h"
+#include "DMACtrl.h"
 
 #include <vector>
 
@@ -11,7 +13,7 @@ public:
 
     LTC2333();
 
-    void configure(const uint32_t& chanMask, const uint32_t& range = 0, const uint32_t& mode = 0); 
+    void configure(const uint32_t& chipMask, const uint32_t& chanMask, const uint32_t& range = 0, const uint32_t& mode = 0, const uint32_t& nEvents = 512+1); 
 
     void setReadDepth(const uint32_t& depth);
 
@@ -29,19 +31,21 @@ public:
 
     void reset();
 
-    bool wait(const uint32_t& chip, const uint32_t& depth, const uint32_t& timeout = 1000);
+    bool wait(const uint32_t& timeout = 1000);
 
-    std::vector<uint32_t> read(const uint32_t& chip, const uint32_t& depth, const uint32_t& timeout = 1000);
+    void read(uint32_t* buff);
 
 private:
     static constexpr char WRITE_NAME[]  = "LTC2333-write-axi-to-ipif-mux-1";
     static constexpr char READ_NAME[]   = "LTC2333-read-axi-to-ipif-mux-0";
-    static constexpr char FIFO_NAME_A[] = "LTC2333-read-LTC233-read-block-";
-    static constexpr char FIFO_NAME_B[] = "-AXI-Full-IPIF-0";
 
+    UDMABuf dma_buf_;
+    DMACtrl dma_ctrl_;
+    
     UIO read_;
     UIO write_;
-    std::vector<UIO> fifos_;
+
+    uint32_t nEvents_, chipMask_;
 };
 
 #endif
