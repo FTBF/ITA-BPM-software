@@ -9,18 +9,18 @@ set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR})
 set(SOURCE_DIR "${CMAKE_SOURCE_DIR}/src")
 
-include(ExternalProject)
-ExternalProject_Add(project_yaml_cpp
-        GIT_REPOSITORY "https://github.com/jbeder/yaml-cpp"
-        GIT_TAG "yaml-cpp-0.6.3"
-        INSTALL_COMMAND ""
-        PREFIX ${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp)
-ExternalProject_Get_Property(project_yaml_cpp source_dir)
-ExternalProject_Get_Property(project_yaml_cpp binary_dir)
-
-add_library(yaml-cpp SHARED IMPORTED)
-add_dependencies(yaml-cpp project_yaml_cpp)
-set_property(TARGET yaml-cpp PROPERTY IMPORTED_LOCATION ${binary_dir}/libyaml-cpp.a)
+#include(ExternalProject)
+#ExternalProject_Add(project_yaml_cpp
+#        GIT_REPOSITORY "https://github.com/jbeder/yaml-cpp"
+#        GIT_TAG "yaml-cpp-0.6.3"
+#        INSTALL_COMMAND ""
+#        PREFIX ${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp)
+#ExternalProject_Get_Property(project_yaml_cpp source_dir)
+#ExternalProject_Get_Property(project_yaml_cpp binary_dir)
+#
+#add_library(yaml-cpp SHARED IMPORTED)
+#add_dependencies(yaml-cpp project_yaml_cpp)
+#set_property(TARGET yaml-cpp PROPERTY IMPORTED_LOCATION ${binary_dir}/libyaml-cpp.a)
 
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
@@ -35,4 +35,5 @@ add_library(LTC2333  ${SOURCE_DIR}/LTC2333.cpp)
 
 add_executable(test ${SOURCE_DIR}/test.cpp)
 
-target_link_libraries(test PUBLIC yaml-cpp UIO LTC2333)
+#target_link_libraries(test PUBLIC yaml-cpp UIO LTC2333)
+target_link_libraries(test PUBLIC UIO LTC2333)
