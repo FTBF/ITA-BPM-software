@@ -37,3 +37,8 @@ add_executable(test ${SOURCE_DIR}/test.cpp)
 
 #target_link_libraries(test PUBLIC yaml-cpp UIO LTC2333)
 target_link_libraries(test PUBLIC UIO LTC2333)
+
+add_executable(server ${SOURCE_DIR}/server.cpp)
+
+#target_link_libraries(test PUBLIC yaml-cpp UIO LTC2333)
+target_link_libraries(server PUBLIC UIO LTC2333 zmq pthread)
