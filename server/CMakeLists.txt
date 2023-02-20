@@ -12,7 +12,7 @@ set(SOURCE_DIR "${CMAKE_SOURCE_DIR}/src")
 include(ExternalProject)
 ExternalProject_Add(project_yaml_cpp
   #        GIT_REPOSITORY "https://github.com/jbeder/yaml-cpp"
-        GIT_REPOSITORY "${CMAKE_SOURCE_DIR}/../yaml-cpp.git"
+        GIT_REPOSITORY "${CMAKE_SOURCE_DIR}/../../yaml-cpp.git"
         GIT_TAG "yaml-cpp-0.7.0"
         INSTALL_COMMAND ""
         PREFIX ${CMAKE_CURRENT_BINARY_DIR}/yaml-cpp)
