@@ -23,6 +23,7 @@ public:
 
     void configureSGBuf(const UDMABuf& buf, const uint32_t length, const uint8_t chipMask)
     {
+        const unsigned int SG_OFFSET = 128;
         //Addresses hardcoded, can this be avoided?
         const uint32_t sas[] = {
             0x76000000,
@@ -33,24 +34,25 @@ public:
             0x76050000,
             0x76060000,
             0x76070000,
+            0x76080000, // timestamp fifo
         };
         nSGBuf_ = 0;
         for(unsigned int i = 0; i < sgBuf_.size()/4; ++i) sgBuf_[i] = 0;
-        for(unsigned int i = 0; i < 8; ++i)
+        for(unsigned int i = 0; i <= 8; ++i)
         {
-            if((1 << i) & chipMask)
+            if(((1 << i) & chipMask) || i == 8)
             {
-                sgBuf_[0 + nSGBuf_*128/4] = sgBuf_.physAddr() + (nSGBuf_ + 1)*128;
-                sgBuf_[2 + nSGBuf_*128/4] = sas[i];
-                sgBuf_[4 + nSGBuf_*128/4] = buf.physAddr() + length*nSGBuf_;
-                sgBuf_[6 + nSGBuf_*128/4] = length;
+                sgBuf_[0 + nSGBuf_*SG_OFFSET/4] = sgBuf_.physAddr() + (nSGBuf_ + 1)*SG_OFFSET;
+                sgBuf_[2 + nSGBuf_*SG_OFFSET/4] = sas[i];
+                sgBuf_[4 + nSGBuf_*SG_OFFSET/4] = buf.physAddr() + length*nSGBuf_;
+                sgBuf_[6 + nSGBuf_*SG_OFFSET/4] = (i == 8)?(2*length):length;  // timestamp is 64 bits so twice a many bytes to transfer
                 ++nSGBuf_;
             }
         }
         //close pointer ring
-        sgBuf_[0 + (nSGBuf_-1)*128/4] = sgBuf_.physAddr();
+        sgBuf_[0 + (nSGBuf_-1)*SG_OFFSET/4] = sgBuf_.physAddr();
         curdescPtr(sgBuf_.physAddr());
-        lastTailPtr_ = sgBuf_.physAddr() + (nSGBuf_ - 1)*128;
+        lastTailPtr_ = sgBuf_.physAddr() + (nSGBuf_ - 1)*SG_OFFSET;
 
         //set interrupt coalessing
         dma_[0] = (0xff00ffff & dma_[0]) | (nSGBuf_ << 16);

@@ -22,7 +22,7 @@ void LTC2333::configure(const uint32_t& chipMask, const uint32_t& chanMask, cons
     nEvents_ = nEvents;
     chipMask_ = chipMask;
     
-    dma_buf_.syncSize(nEvents*8*sizeof(uint32_t));
+    dma_buf_.syncSize((nEvents)*10*sizeof(uint32_t));
     dma_ctrl_.configureSGBuf(dma_buf_, nEvents*sizeof(uint32_t), chipMask);
 
     write_[1] = (chanMask & 0xff) | ((mode & 0x1) << 8) | ((range & 0x7) << 16);
@@ -96,7 +96,7 @@ void LTC2333::read(uint32_t* buff)
     dma_ctrl_.IRQReset();
     dma_buf_.syncCpu();
 
-    memcpy(buff, dma_buf_.mem(), dma_ctrl_.nSGBuf_*nEvents_*sizeof(uint32_t));
+    memcpy(buff, dma_buf_.mem(), (dma_ctrl_.nSGBuf_+1)*nEvents_*sizeof(uint32_t)); // +1 because timestamp is 64 bits
 
     for(unsigned int i = 0; i < dma_ctrl_.nSGBuf_; ++i) dma_ctrl_.sgBufReset(i);
 }

@@ -9,16 +9,23 @@
 #include <vector>
 #include <algorithm>
 #include <chrono>
+#include <memory>
 
 
 int main()
 {
     const int READS_PER_TRIGGER = 512 + 1;
     const int NUM_TRIGGERS = 1000;
-    uint32_t chipMask = 0x0f;
+    uint32_t chipMask = 0xff;
+
+    uint32_t nChan = 0;
+    for(int i = 0; i < 8; ++i)
+    {
+        if(chipMask & (1 << i)) nChan += 1;
+    }
 
     //uint32_t buff[READS_PER_TRIGGER*8];
-    std::vector<uint32_t>* buff = new std::vector<uint32_t>(READS_PER_TRIGGER*NUM_TRIGGERS*4);
+    std::unique_ptr<std::vector<uint32_t>> buff(new std::vector<uint32_t>(READS_PER_TRIGGER*NUM_TRIGGERS*(nChan+2)));
 
     //LED control gpio
     UIO gpio("axi-gpio-0");
@@ -48,22 +55,28 @@ int main()
 
         ltc.wait();
 
-        ltc.read(buff->data()+iTrig*READS_PER_TRIGGER*4);
+        ltc.read(buff->data()+iTrig*READS_PER_TRIGGER*(nChan+2)); //nChan + 2 to account for 64 bit timestamp
     }
-
     auto stop = std::chrono::system_clock::now();
 
-    for(int i = 0; i < 4; ++i)
+    for(int i = 0; i < 9; ++i)
     {
         std::cout << "FIFOOcc: " << i << "\t" << ltc.getFIFOOcc(i) << std::endl;
     }
-    
+
+    std::cout << buff->size() << std::endl;
     for(int i = 1; i < READS_PER_TRIGGER; ++i)
     {
-        std::cout << i << "\t" << (0x7&((*buff)[i] >> 3))
-                  << "\t" << (0x7&((*buff)[i + READS_PER_TRIGGER] >> 3))
-                  << "\t" << (0x7&((*buff)[i + 2*(READS_PER_TRIGGER)] >> 3))
-                  << "\t" << (0x7&((*buff)[i + 3*(READS_PER_TRIGGER)] >> 3)) << std::endl;
+        printf("%6d:  %12llu  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d\n",  i,
+               *(uint64_t*)(buff->data() + 2*i + 8*READS_PER_TRIGGER),
+               0x7&((*buff)[i + 0*READS_PER_TRIGGER] >> 3),
+               0x7&((*buff)[i + 1*READS_PER_TRIGGER] >> 3),
+               0x7&((*buff)[i + 2*READS_PER_TRIGGER] >> 3),
+               0x7&((*buff)[i + 3*READS_PER_TRIGGER] >> 3),
+               0x7&((*buff)[i + 4*READS_PER_TRIGGER] >> 3),
+               0x7&((*buff)[i + 5*READS_PER_TRIGGER] >> 3),
+               0x7&((*buff)[i + 6*READS_PER_TRIGGER] >> 3),
+               0x7&((*buff)[i + 7*READS_PER_TRIGGER] >> 3));
     }
     ltc.enableRead(false);
 
