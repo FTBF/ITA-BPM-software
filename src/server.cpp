@@ -5,10 +5,13 @@
 #include <string>
 #include <iostream>
 #include <unistd.h>
-
+#include <yaml-cpp/yaml.h>
 
 #include <thread>
 #include <memory>
+#include <unordered_map>
+#include <functional>
+
 
 class DAQ_Thread
 {
@@ -93,6 +96,105 @@ private:
 
 };
 
+class Ctrl_Thread
+{
+public:
+    Ctrl_Thread(zmq::context_t& context) : control_socket_ (context, zmq::socket_type::rep), daq_(context)
+    {
+        control_socket_.bind ("tcp://*:5555");
+
+        chipMask_ = 0xff;
+        read_period_ = 0;
+        range_ = 0;
+        chanMask_ = 0xff;
+        reads_per_trigger_ = 1024+1;
+
+        cmdMap_.emplace("start",  cmd_start);
+        cmdMap_.emplace("stop",   cmd_stop);
+        cmdMap_.emplace("config", cmd_config);
+    }
+
+    void parse_config(const YAML::Node& config)
+    {
+        if(config["chipMask"])          chipMask_          = config["chipMask"]          .as< decltype(chipMask_)          >();
+        if(config["read_period"])       read_period_       = config["read_period"]       .as< decltype(read_period_)       >();
+        if(config["range"])             range_             = config["range"]             .as< decltype(range_)             >();
+        if(config["chanMask"])          chanMask_          = config["chanMask"]          .as< decltype(chanMask_)          >();
+        if(config["reads_per_trigger"]) reads_per_trigger_ = config["reads_per_trigger"] .as< decltype(reads_per_trigger_) >();
+    }
+
+    void recieveCommand()
+    {
+        zmq::message_t request;
+
+        //  Wait for next request from client
+        control_socket_.recv (request, zmq::recv_flags::none);
+
+        auto iter = cmdMap_.find(request.to_string());
+        if(iter != cmdMap_.end())
+        {
+            iter->second(this);
+        }
+        else
+        {
+            std::cout << "Unknown command " << request.to_string() << std::endl;
+            //  Send reply back to client
+            zmq::message_t reply ("Unknowncmd", 10);
+            control_socket_.send (reply, zmq::send_flags::none);
+        }
+
+    }
+private:
+    zmq::socket_t control_socket_;
+    uint8_t chipMask_;
+    uint32_t read_period_;
+    uint8_t range_;
+    uint8_t chanMask_;
+    uint32_t reads_per_trigger_;
+    std::unordered_map<std::string, std::function<void(Ctrl_Thread*)>> cmdMap_;
+    DAQ_Thread daq_;
+
+    static void cmd_start(Ctrl_Thread* self)
+    {
+        //don't configure until ongoing run is finished
+        self->daq_.join_daq_thread();
+        self->daq_.configure(self->chipMask_, self->read_period_, self->range_, self->chanMask_, self->reads_per_trigger_);
+
+        //  Send reply back to client
+        zmq::message_t reply ("Runing", 6);
+        self->control_socket_.send (reply, zmq::send_flags::none);
+
+        self->daq_.start_daq_thread();
+    }
+
+    static void cmd_stop(Ctrl_Thread* self)
+    {
+        //  Send reply back to client
+        zmq::message_t reply ("Stopped", 7);
+        self->control_socket_.send (reply, zmq::send_flags::none);
+        
+    }
+
+    static void cmd_config(Ctrl_Thread* self)
+    {
+        //  Send reply back to client
+        zmq::message_t reply ("Ready", 5);
+        self->control_socket_.send (reply, zmq::send_flags::none);
+
+        zmq::message_t request;
+
+        //  Wait for config dataw from client
+        self->control_socket_.recv (request, zmq::recv_flags::none);
+
+        self->parse_config(YAML::Load(request.to_string()));
+
+        //  Send reply back to client
+        zmq::message_t reply2 ("Configured", 10);
+        self->control_socket_.send (reply2, zmq::send_flags::none);
+
+    }
+};
+
 int main () 
 {
     //LED control gpio
@@ -101,29 +203,12 @@ int main ()
 
     //  Prepare our context and socket
     zmq::context_t context (2);
-    zmq::socket_t control_socket (context, zmq::socket_type::rep);
-    control_socket.bind ("tcp://*:5555");
 
-    DAQ_Thread daq(context);
+    Ctrl_Thread daq(context);
 
     while (true) 
     {
-        zmq::message_t request;
-
-        //  Wait for next request from client
-        control_socket.recv (request, zmq::recv_flags::none);
-        std::cout << "Received Hello" << std::endl;
-
-        daq.configure();
-
-        //  Send reply back to client
-        zmq::message_t reply (5);
-        memcpy (reply.data (), "World", 5);
-        control_socket.send (reply, zmq::send_flags::none);
-
-        daq.start_daq_thread();
-
-        daq.join_daq_thread();
+        daq.recieveCommand();
     }
     return 0;
 }
