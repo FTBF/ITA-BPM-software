@@ -36,11 +36,10 @@ add_dependencies(zmq project_zmq)
 set_property(TARGET zmq PROPERTY IMPORTED_LOCATION ${binary_dir}/lib/libzmq.a)
 include_directories(${source_dir}/include)
 
-
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wno-psabi -fstack-protector -Wno-unused-variable) 
 
 add_executable(client ${SOURCE_DIR}/client.cpp)
-target_link_libraries(client PUBLIC UIO LTC2333 zmq pthread yaml-cpp)
+target_link_libraries(client PUBLIC zmq pthread yaml-cpp)
 
