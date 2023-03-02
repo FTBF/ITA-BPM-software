@@ -21,7 +21,7 @@ public:
         data_socket_.bind ("tcp://*:5556");
     }
 
-    void configure(uint8_t chipMask = 0xff, uint32_t read_period = 0, uint8_t range = 0, uint8_t chanMask = 0xff, uint32_t reads_per_trigger = 1024+1)
+    void configure(uint32_t numTrigger = 1000, uint8_t chipMask = 0xff, uint32_t read_period = 0, uint8_t range = 0, uint8_t chanMask = 0xff, uint32_t reads_per_trigger = 1024+1)
     {
         join_daq_thread();
         
@@ -32,6 +32,7 @@ public:
         }
 
         reads_per_trigger_ = reads_per_trigger;
+        num_triggers_ = numTrigger;
 
         ltc_.configure(chipMask, chanMask, range, 0, reads_per_trigger_);
         ltc_.setReadDepth(reads_per_trigger_);
@@ -72,6 +73,7 @@ private:
         while(!self->ltc_.fifoReady(0, self->reads_per_trigger_)) usleep(10);
 
         //DAQ loop
+        std::cout << "N events: " << self->num_triggers_ << std::endl;
         for(int iTrig = 0; iTrig < self->num_triggers_; ++iTrig)
         {
             while(self->ltc_.writeInProgress());
@@ -108,7 +110,8 @@ public:
         range_ = 0;
         chanMask_ = 0xff;
         reads_per_trigger_ = 1024+1;
-
+        num_triggers_ = 1000;
+    
         cmdMap_.emplace("start",  cmd_start);
         cmdMap_.emplace("stop",   cmd_stop);
         cmdMap_.emplace("config", cmd_config);
@@ -121,6 +124,7 @@ public:
         if(config["range"])             range_             = config["range"]             .as< decltype(range_)             >();
         if(config["chanMask"])          chanMask_          = config["chanMask"]          .as< decltype(chanMask_)          >();
         if(config["reads_per_trigger"]) reads_per_trigger_ = config["reads_per_trigger"] .as< decltype(reads_per_trigger_) >();
+        if(config["num_triggers"])      num_triggers_      = config["num_triggers"]      .as< decltype(num_triggers_)      >();
     }
 
     void recieveCommand()
@@ -151,6 +155,7 @@ private:
     uint8_t range_;
     uint8_t chanMask_;
     uint32_t reads_per_trigger_;
+    uint32_t num_triggers_;
     std::unordered_map<std::string, std::function<void(Ctrl_Thread*)>> cmdMap_;
     DAQ_Thread daq_;
 
@@ -158,7 +163,7 @@ private:
     {
         //don't configure until ongoing run is finished
         self->daq_.join_daq_thread();
-        self->daq_.configure(self->chipMask_, self->read_period_, self->range_, self->chanMask_, self->reads_per_trigger_);
+        self->daq_.configure(self->num_triggers_, self->chipMask_, self->read_period_, self->range_, self->chanMask_, self->reads_per_trigger_);
 
         //  Send reply back to client
         zmq::message_t reply ("Runing", 6);
