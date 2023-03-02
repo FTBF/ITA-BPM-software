@@ -1,0 +1,10 @@
+ip: 192.168.46.31
+ctrl_port: 5555
+daq_port: 5556
+chipMask: 0xff
+read_period: 0
+range: 0
+chanMask: 0xff
+reads_per_trigger: 1025
+num_triggers : 100
+file_name: data.dat 
