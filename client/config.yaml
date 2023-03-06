@@ -8,3 +8,5 @@ chanMask: 0xff
 reads_per_trigger: 1025
 num_triggers : 100
 file_name: data.dat 
+bias1: 0
+boas2: 0

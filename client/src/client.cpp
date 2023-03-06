@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <unistd.h>
 #include "yaml-cpp/yaml.h"
+#include <signal.h>
 
 namespace std
 {
@@ -16,6 +17,15 @@ namespace std
                 fclose(file);
             }
     };
+}
+
+bool g_stop = false;
+
+void signal_callback_handler(int signum) 
+{
+    std::cout << "Caught signal " << signum << std::endl;
+    // Terminate program
+    g_stop = true;
 }
 
 class DAQCtrl
@@ -68,6 +78,19 @@ public:
         return temperature;
     }
 
+    void setBias()
+    {
+        //read temperature
+        zmq::message_t msg ("bias", 4);
+        ctrl_socket_.send (msg, zmq::send_flags::none);
+
+        zmq::message_t reply;
+
+        //  Wait for next request from client
+        ctrl_socket_.recv (reply, zmq::recv_flags::none);
+        std::cout << "Received " << reply << std::endl;
+    }
+
     void sendConfig()
     {
         //send configuration file to daq board
@@ -96,8 +119,7 @@ public:
         out_file_.reset(fopen(file_name_.c_str(), "wb"));
     
         //  Start daq taking based on current settings
-        zmq::message_t reply (5);
-        memcpy (reply.data (), "start", 5);
+        zmq::message_t reply ("start", 5);
         ctrl_socket_.send (reply, zmq::send_flags::none);
 
         zmq::message_t request;
@@ -106,13 +128,19 @@ public:
         ctrl_socket_.recv (request, zmq::recv_flags::none);
         std::cout << "Received " << request << std::endl;
 
-        for(int i = 0; i < nEvts_; ++i)
+        for(int i = 0; i < nEvts_ || nEvts_ < 0; ++i)
         {
             //  Wait for next request from client
             daq_socket_.recv (request, zmq::recv_flags::none);
 
             fwrite(request.data(), sizeof(char), request.size(), out_file_.get());
             fputc('\n', out_file_.get());
+
+            if(g_stop) 
+            {
+                stopRun();
+                break;
+            }
         }
 
     }
@@ -124,7 +152,7 @@ public:
         ctrl_socket_.send (reply, zmq::send_flags::none);
 
         zmq::message_t request;
-
+            
         //  Wait for next request from client
         ctrl_socket_.recv (request, zmq::recv_flags::none);
         std::cout << "Received " << request << std::endl;
@@ -146,9 +174,15 @@ int main ()
     YAML::Node config = YAML::LoadFile("config.yaml");
     zmq::context_t context (2);
 
+    // Register signal and signal handler
+    signal(SIGINT, signal_callback_handler);
+
     DAQCtrl daq(context, config);
 
     daq.sendConfig();
+    daq.setBias();
+    daq.readTemp(1);
+    daq.readTemp(2);
     daq.startRun();
 
     return 0;
