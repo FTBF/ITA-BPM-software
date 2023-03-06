@@ -53,7 +53,7 @@ public:
 
     void stop_daq_thread()
     {
-        std::scoped_lock(stop_mtx_);
+        std::scoped_lock lock(stop_mtx_);
         stop_ = true;
     }
 
@@ -61,8 +61,8 @@ private:
     LTC2333 ltc_;
     zmq::socket_t data_socket_;
     int reads_per_trigger_;
-    int num_triggers_ = 1000;
-    uint32_t chipMask_ = 0xff;
+    int num_triggers_;
+    uint32_t chipMask_;
     int nChan_;
 
     std::unique_ptr<std::thread> daq_thread_;
@@ -83,12 +83,13 @@ private:
 
         //DAQ loop
         std::cout << "N events: " << self->num_triggers_ << std::endl;
-        for(int iTrig = 0; iTrig < self->num_triggers_; ++iTrig)
+        for(int iTrig = 0; iTrig < self->num_triggers_ || self->num_triggers_ < 0; ++iTrig)
         {
+            if(self->stop_)
             {
-                std::scoped_lock(self->stop_mtx_);
+                std::scoped_lock lock(self->stop_mtx_);
                 self->stop_ = false;
-                if(self->stop_) break;
+                break;
             }
             while(self->ltc_.writeInProgress());
             self->ltc_.trigger();
@@ -115,7 +116,7 @@ private:
 class Ctrl_Thread
 {
 public:
-    Ctrl_Thread(zmq::context_t& context) : control_socket_ (context, zmq::socket_type::rep), daq_(context), i2c_1("/dev/i2c-1"), i2c_2("/dev/i2c-2")
+    Ctrl_Thread(zmq::context_t& context) : control_socket_ (context, zmq::socket_type::rep), daq_(context), i2c_1_("/dev/i2c-1"), i2c_2_("/dev/i2c-2")
     {
         control_socket_.bind ("tcp://*:5555");
 
@@ -125,11 +126,13 @@ public:
         chanMask_ = 0xff;
         reads_per_trigger_ = 1024+1;
         num_triggers_ = 1000;
+        bias1_ = bias2_ = 0;
     
         cmdMap_.emplace("start",  cmd_start);
         cmdMap_.emplace("stop",   cmd_stop);
         cmdMap_.emplace("config", cmd_config);
         cmdMap_.emplace("temp",   cmd_readTemp);
+        cmdMap_.emplace("bias",   cmd_setBias);
     }
 
     void parse_config(const YAML::Node& config)
@@ -140,6 +143,8 @@ public:
         if(config["chanMask"])          chanMask_          = config["chanMask"]          .as< decltype(chanMask_)          >();
         if(config["reads_per_trigger"]) reads_per_trigger_ = config["reads_per_trigger"] .as< decltype(reads_per_trigger_) >();
         if(config["num_triggers"])      num_triggers_      = config["num_triggers"]      .as< decltype(num_triggers_)      >();
+        if(config["bias1"])             bias1_             = config["bias1"]             .as< decltype(bias1_)             >();
+        if(config["bias2"])             bias2_             = config["bias2"]             .as< decltype(bias2_)             >();
     }
 
     void recieveCommand()
@@ -147,8 +152,17 @@ public:
         zmq::message_t request;
 
         //  Wait for next request from client
-        control_socket_.recv (request, zmq::recv_flags::none);
+        auto res = control_socket_.recv (request, zmq::recv_flags::none);
 
+        if(!res || res <= 0)
+        {
+            std::cout << "No command recieved" << std::endl;
+            //  Send reply back to client
+            zmq::message_t reply ("Nocmd", 5);
+            control_socket_.send (reply, zmq::send_flags::none);
+            return;
+        }
+        
         auto iter = cmdMap_.find(request.to_string());
         if(iter != cmdMap_.end())
         {
@@ -163,6 +177,13 @@ public:
         }
 
     }
+
+    void stop()
+    {
+        daq_.stop_daq_thread();
+        daq_.join_daq_thread();        
+    }
+    
 private:
     zmq::socket_t control_socket_;
     uint8_t chipMask_;
@@ -170,10 +191,11 @@ private:
     uint8_t range_;
     uint8_t chanMask_;
     uint32_t reads_per_trigger_;
-    uint32_t num_triggers_;
+    int num_triggers_;
+    uint32_t bias1_, bias2_;
     std::unordered_map<std::string, std::function<void(Ctrl_Thread*)>> cmdMap_;
     DAQ_Thread daq_;
-    I2C i2c_1, i2c_2;
+    I2C i2c_1_, i2c_2_;
 
     static void cmd_start(Ctrl_Thread* self)
     {
@@ -207,7 +229,16 @@ private:
         zmq::message_t request;
 
         //  Wait for config dataw from client
-        self->control_socket_.recv (request, zmq::recv_flags::none);
+        auto res = self->control_socket_.recv (request, zmq::recv_flags::none);
+
+        if(!res || res <= 0)
+        {
+            std::cout << "No configuration file recieved" << std::endl;
+            //  Send reply back to client
+            zmq::message_t reply ("Nocfg", 5);
+            self->control_socket_.send (reply, zmq::send_flags::none);
+            return;
+        }
 
         self->parse_config(YAML::Load(request.to_string()));
 
@@ -226,9 +257,17 @@ private:
         zmq::message_t message;
 
         //  Wait for channel number from client
-        self->control_socket_.recv (message, zmq::recv_flags::none);
+        auto res = self->control_socket_.recv (message, zmq::recv_flags::none);
 
-        
+        if(!res || res <= 0)
+        {
+            std::cout << "No channel recieved" << std::endl;
+            //  Send reply back to client
+            zmq::message_t reply ("Nochan", 6);
+            self->control_socket_.send (reply, zmq::send_flags::none);
+            return;
+        }
+
         if(message.data<char>()[0] != '1' && message.data<char>()[0] != '2')
         {
             std::cout << "Invalid temperature channel number: " << message.data<char>()[0] << std::endl;
@@ -243,11 +282,11 @@ private:
 
         if(message.data<char>()[0] != '1')
         {
-            i2c = &self->i2c_1;
+            i2c = &self->i2c_1_;
         }
         else if(message.data<char>()[0] != '2')
         {
-            i2c = &self->i2c_2;
+            i2c = &self->i2c_2_;
         }
 
         //read first value
@@ -260,26 +299,33 @@ private:
             result = i2c->read(addr, 4);
         } while(result[3] & 0x80); //check for ~Ready bit
 
-        for(const auto& r : result) printf("%x ", r); printf("\n");
         float voltage1 = float(int( ((result[0]&0x2)?0xfffe0000:0) | uint32_t((result[0]&0x1) << 16) | uint32_t(result[1] << 8) | uint32_t(result[2])))*2.048/(1<<17);
 
         //read second value
         //write config byte and start conversion
         i2c->write(addr, {0xac});
 
-        result;
         do
         {
             result = i2c->read(addr, 4);
         } while(result[3] & 0x80); //check for ~Ready bit
 
-        for(const auto& r : result) printf("%x ", r); printf("\n");
         float voltage2 = float(int( ((result[0]&0x2)?0xfffe0000:0) | uint32_t((result[0]&0x1) << 16) | uint32_t(result[1] << 8) | uint32_t(result[2])))*2.048/(1<<17);
 
         //  Send reply back to client
         std::string voltageStr = std::to_string(voltage1) + " " + std::to_string(voltage2);
         zmq::message_t voltageMsg (voltageStr.c_str(), voltageStr.size());
         self->control_socket_.send (voltageMsg, zmq::send_flags::none);
+    }
+
+    static void cmd_setBias(Ctrl_Thread* self)
+    {
+        if(self->chipMask_ & 0x0f) self->i2c_1_.write(0x20, {0x04, uint8_t(0xff&(self->bias1_)), uint8_t(0x3&(self->bias1_>> 8))});
+        if(self->chipMask_ & 0xf0) self->i2c_2_.write(0x20, {0x04, uint8_t(0xff&(self->bias2_)), uint8_t(0x3&(self->bias2_>> 8))});
+
+        //  Send reply back to client
+        zmq::message_t reply ("Ready", 5);
+        self->control_socket_.send (reply, zmq::send_flags::none);
     }
 };
 

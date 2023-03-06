@@ -33,12 +33,10 @@ public:
 
         setAddress(addr);
         
-        if (::read(file_,buf.data(),len) != ssize_t(len)) {
+        if (::read(file_, buf.data(), len) != ssize_t(len))
+        {
             /* ERROR HANDLING: i2c transaction failed */
-            printf("Failed to read from the i2c bus.\n");
-//            buffer = g_strerror(errno);
-//            printf(buffer);
-//            printf("\n\n");
+            printf("Failed to read from the i2c bus. (error: %d, %s)\n", errno, strerror(errno));
 
         }
 
@@ -49,12 +47,10 @@ public:
     {
         setAddress(addr);
 
-        if (::write(file_,data.data(),data.size()) != ssize_t(data.size())) {
+        if (::write(file_, data.data(), data.size()) != ssize_t(data.size()))
+        {
             /* ERROR HANDLING: i2c transaction failed */
-            printf("Failed to write to the i2c bus.\n");
-//            buffer = g_strerror(errno);
-//            printf(buffer);
-//            printf("\n\n");
+            printf("Failed to write to the i2c bus. (error: %d, %s)\n", errno, strerror(errno));
         }
     }
 private:
