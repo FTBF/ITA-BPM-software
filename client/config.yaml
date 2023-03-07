@@ -6,7 +6,8 @@ read_period: 0
 range: 0
 chanMask: 0xff
 reads_per_trigger: 1025
-num_triggers : 100
-file_name: data.dat 
+num_triggers : 100 
+file_name: data
+maxFileSize: 100000000 
 bias1: 0
 boas2: 0
