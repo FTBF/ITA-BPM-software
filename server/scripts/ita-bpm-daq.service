@@ -1,0 +1,16 @@
+[Unit]
+Description=DAQ server for the ITA BPM ADC board
+PartOf=loadFirmware.service
+#After=loadFirmware.service
+
+[Service]
+User=ubuntu
+#WorkingDirectory=/home/ubuntu/mydaemon
+ExecStart=/home/ubuntu/software/ITA-BPM-software/server/bin/server
+#Type=simple
+#TimeoutStopSec=10
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

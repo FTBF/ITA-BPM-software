@@ -23,6 +23,8 @@ public:
 
     bool writeInProgress();
 
+    bool triggerPending();
+
     uint32_t getFIFOOcc(const uint32_t& chan);
 
     void trigger();
@@ -33,17 +35,21 @@ public:
 
     bool wait(const uint32_t& timeout = 1000);
 
+    void IRQReset();
+    
     void read(uint32_t* buff);
 
 private:
     static constexpr char WRITE_NAME[]  = "LTC2333-write-axi-to-ipif-mux-1";
     static constexpr char READ_NAME[]   = "LTC2333-read-axi-to-ipif-mux-0";
+    static constexpr char INTR_NAME[]   = "LTC2333-read-axi-intc-0";
 
     UDMABuf dma_buf_;
     DMACtrl dma_ctrl_;
     
     UIO read_;
     UIO write_;
+    UIO interrupt_;
 
     uint32_t nEvents_, chipMask_;
 };

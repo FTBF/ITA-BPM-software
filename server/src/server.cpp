@@ -73,13 +73,16 @@ private:
     {
         //  Do some 'work'
         while(self->ltc_.writeInProgress()) usleep(10);
-
+        
         self->ltc_.reset();
-
         self->ltc_.enableRead(true);
-    
+        self->ltc_.IRQReset();
+
         self->ltc_.trigger();
-        while(!self->ltc_.fifoReady(0, self->reads_per_trigger_)) usleep(10);
+        
+        //self->ltc_.wait();
+        self->ltc_.IRQReset();
+        while(self->ltc_.writeInProgress()) usleep(10);
 
         //DAQ loop
         std::cout << "N events: " << self->num_triggers_ << std::endl;
@@ -91,16 +94,19 @@ private:
                 self->stop_ = false;
                 break;
             }
-            while(self->ltc_.writeInProgress());
+
+            zmq::message_t data (self->reads_per_trigger_*(self->nChan_+2)*sizeof(uint32_t));
+
+            //while(self->ltc_.triggerPending());
             self->ltc_.trigger();
+            //while(self->ltc_.writeInProgress());
 
             self->ltc_.wait();
 
-            //  read data and send to client
-            zmq::message_t data (self->reads_per_trigger_*(self->nChan_+2)*sizeof(uint32_t));
+            // read data and send to client
             self->ltc_.read(reinterpret_cast<uint32_t*>(data.data())); 
 
-            self->data_socket_.send (data, zmq::send_flags::none);
+            self->data_socket_.send(std::move(data), zmq::send_flags::dontwait);
         }
 
         for(int i = 0; i < 9; ++i)
@@ -110,7 +116,6 @@ private:
 
         self->ltc_.enableRead(false);
     }
-
 };
 
 class Ctrl_Thread
