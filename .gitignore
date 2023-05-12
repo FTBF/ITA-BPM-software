@@ -8,3 +8,9 @@ bin/
 build/
 
 *.dat
+
+*.png
+*.jpg
+*.jpeg
+*.pdf
+**.ipynb_checkpoints
