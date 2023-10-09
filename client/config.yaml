@@ -5,7 +5,8 @@ chipMask: 0xff
 read_period: 0
 range: 0
 chanMask: 0xff
-reads_per_trigger: 1025
+reads_per_trigger: 1024
+num_sum: 128
 num_triggers : 100 
 file_name: data
 maxFileSize: 100000000 

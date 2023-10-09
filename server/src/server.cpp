@@ -17,12 +17,12 @@
 class DAQ_Thread
 {
 public:
-    DAQ_Thread(zmq::context_t& context) : data_socket_(context, zmq::socket_type::push), reads_per_trigger_(1024+1), num_triggers_(1000), nChan_(0), daq_thread_(nullptr), stop_(false)
+    DAQ_Thread(zmq::context_t& context) : data_socket_(context, zmq::socket_type::push), reads_per_trigger_(1024), num_triggers_(1000), nChan_(0), nsum_(0)daq_thread_(nullptr), stop_(false)
     {
         data_socket_.bind ("tcp://*:5556");
     }
 
-    void configure(uint32_t numTrigger = 1000, uint8_t chipMask = 0xff, uint32_t read_period = 0, uint8_t range = 0, uint8_t chanMask = 0xff, uint32_t reads_per_trigger = 1024+1)
+    void configure(uint32_t numTrigger = 1000, uint8_t chipMask = 0xff, uint32_t read_period = 0, uint8_t range = 0, uint8_t chanMask = 0xff, uint32_t reads_per_trigger = 1024, uint32_t numSum = 0)
     {
         join_daq_thread();
         
@@ -34,10 +34,12 @@ public:
 
         reads_per_trigger_ = reads_per_trigger;
         num_triggers_ = numTrigger;
+        nsum_ = nsum;
 
         ltc_.configure(chipMask, chanMask, range, 0, reads_per_trigger_);
         ltc_.setReadDepth(reads_per_trigger_);
         ltc_.setReadPeriod(read_period);
+        ltc_.setNumSum(numSum);
     }
     
     void start_daq_thread()
@@ -62,7 +64,7 @@ private:
     zmq::socket_t data_socket_;
     int reads_per_trigger_;
     int num_triggers_;
-    uint32_t chipMask_;
+    uint32_t chipMask_, nsum_;
     int nChan_;
 
     std::unique_ptr<std::thread> daq_thread_;
@@ -70,6 +72,12 @@ private:
     bool stop_;
 
     static void daq_thread(DAQ_Thread* self)
+    {
+        if(self->nsum_ == 0) daq_thread_all(self);
+        else                 daq_thread_sum(self);
+    }
+
+    static void daq_thread_all(DAQ_Thread* self)
     {
         //  Do some 'work'
         while(self->ltc_.writeInProgress()) usleep(10);
@@ -116,6 +124,49 @@ private:
 
         self->ltc_.enableRead(false);
     }
+
+    static void daq_thread_sum(DAQ_Thread* self)
+    {
+        while(self->ltc_.writeInProgress()) usleep(10);
+        
+        self->ltc_.reset();
+        self->ltc_.enableRead(true);
+        self->ltc_.IRQReset();
+
+        self->ltc_.trigger();
+        
+        //self->ltc_.wait();
+        self->ltc_.IRQReset();
+        while(self->ltc_.writeInProgress()) usleep(10);
+
+        //DAQ loop
+        std::cout << "N events: " << self->num_triggers_ << std::endl;
+        for(int iTrig = 0; iTrig < self->num_triggers_ || self->num_triggers_ < 0; ++iTrig)
+        {
+            if(self->stop_)
+            {
+                std::scoped_lock lock(self->stop_mtx_);
+                self->stop_ = false;
+                break;
+            }
+
+            zmq::message_t data (self->reads_per_trigger_*(self->nChan_+2)*sizeof(uint32_t));
+
+            self->ltc_.waitIRQ();
+
+            // read data and send to client
+            self->ltc_.read(reinterpret_cast<uint32_t*>(data.data())); 
+
+            self->data_socket_.send(std::move(data), zmq::send_flags::dontwait);
+        }
+
+        for(int i = 0; i < 9; ++i)
+        {
+            std::cout << "FIFOOcc: " << i << "\t" << self->ltc_.getFIFOOcc(i) << std::endl;
+        }
+
+        self->ltc_.enableRead(false);
+    }
 };
 
 class Ctrl_Thread
@@ -129,7 +180,7 @@ public:
         read_period_ = 0;
         range_ = 0;
         chanMask_ = 0xff;
-        reads_per_trigger_ = 1024+1;
+        reads_per_trigger_ = 1024;
         num_triggers_ = 1000;
         bias1_ = bias2_ = 0;
     
@@ -148,6 +199,7 @@ public:
         if(config["chanMask"])          chanMask_          = config["chanMask"]          .as< decltype(chanMask_)          >();
         if(config["reads_per_trigger"]) reads_per_trigger_ = config["reads_per_trigger"] .as< decltype(reads_per_trigger_) >();
         if(config["num_triggers"])      num_triggers_      = config["num_triggers"]      .as< decltype(num_triggers_)      >();
+        if(config["num_sum"])           num_sum_           = config["num_sum"]           .as< decltype(num_sum_)           >();
         if(config["bias1"])             bias1_             = config["bias1"]             .as< decltype(bias1_)             >();
         if(config["bias2"])             bias2_             = config["bias2"]             .as< decltype(bias2_)             >();
     }
@@ -196,6 +248,7 @@ private:
     uint8_t range_;
     uint8_t chanMask_;
     uint32_t reads_per_trigger_;
+    uint32_t num_sum_;
     int num_triggers_;
     uint32_t bias1_, bias2_;
     std::unordered_map<std::string, std::function<void(Ctrl_Thread*)>> cmdMap_;
@@ -206,7 +259,7 @@ private:
     {
         //don't configure until ongoing run is finished
         self->daq_.join_daq_thread();
-        self->daq_.configure(self->num_triggers_, self->chipMask_, self->read_period_, self->range_, self->chanMask_, self->reads_per_trigger_);
+        self->daq_.configure(self->num_triggers_, self->chipMask_, self->read_period_, self->range_, self->chanMask_, self->reads_per_trigger_, self->num_sum_);
 
         self->daq_.start_daq_thread();
 

@@ -42,6 +42,23 @@ void LTC2333::setReadPeriod(const uint32_t& period)
     write_[2] = period;
 }
 
+void LTC2333::setNumSum(const uint32_t& numSum)
+{
+    read_[3] = numSum;
+}
+
+void LTC2333::setMode(const uint32_t& mode)
+{
+    if(mode)
+    {
+        write_[1] = 0x100 | write_[1];
+    }
+    else
+    {
+        write_[1] = (~uint32_t(0x100)) & write_[1];
+    }
+}
+
 bool LTC2333::writeInProgress()
 {
     return write_[0] & 0x2;
@@ -76,6 +93,13 @@ void LTC2333::enableRead(bool enable)
 void LTC2333::reset()
 {
     read_[0] = read_[0] | 0x1;
+}
+
+bool LTC2333::waitIRQ(const uint32_t& timeout)
+{
+    interrupt_.IRQWait();
+
+    return true;
 }
 
 bool LTC2333::wait(const uint32_t& timeout)

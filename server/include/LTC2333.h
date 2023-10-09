@@ -13,12 +13,16 @@ public:
 
     LTC2333();
 
-    void configure(const uint32_t& chipMask, const uint32_t& chanMask, const uint32_t& range = 0, const uint32_t& mode = 0, const uint32_t& nEvents = 512+1); 
+    void configure(const uint32_t& chipMask, const uint32_t& chanMask, const uint32_t& range = 0, const uint32_t& mode = 0, const uint32_t& nEvents = 512); 
 
     void setReadDepth(const uint32_t& depth);
 
     void setReadPeriod(const uint32_t& period);
 
+    void setNumSum(const uint32_t& numSum);
+
+    void setMode(const uint32_t& mode);
+    
     bool fifoReady(const uint32_t& chan, const uint32_t& NR = 1);
 
     bool writeInProgress();
@@ -32,6 +36,8 @@ public:
     void enableRead(bool enable);
 
     void reset();
+
+    bool waitIRQ(const uint32_t& timeout);
 
     bool wait(const uint32_t& timeout = 1000);
 
