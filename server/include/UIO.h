@@ -5,6 +5,7 @@
 #include <string>
 #include <fcntl.h>
 #include <unistd.h>
+#include <poll.h>
 
 class UIO
 {
@@ -23,9 +24,15 @@ public:
         return fd_;
     }
 
-    inline void IRQWait()
+    inline bool IRQWait(int timeout = -1)
     {
-        ::read(fd_, &count_, 4);
+        if(poll(pfds_, 1, timeout) > 0)
+        {
+            ::read(fd_, &count_, 4);
+            return true;
+        }
+
+        return false;
     }
 
     inline void IRQReset()
@@ -48,6 +55,7 @@ private:
     
     volatile uint32_t * memptr_;
     int fd_, count_;
+    struct pollfd  *pfds_;
     unsigned int size_;
     static constexpr uint32_t IRQCommand_ = 1;
 	

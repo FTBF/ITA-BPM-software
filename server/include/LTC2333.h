@@ -37,7 +37,7 @@ public:
 
     void reset();
 
-    bool waitIRQ(const uint32_t& timeout);
+    bool waitIRQ(const int& timeout = -1);
 
     bool wait(const uint32_t& timeout = 1000);
 

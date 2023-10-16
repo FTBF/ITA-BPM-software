@@ -17,7 +17,7 @@
 class DAQ_Thread
 {
 public:
-    DAQ_Thread(zmq::context_t& context) : data_socket_(context, zmq::socket_type::push), reads_per_trigger_(1024), num_triggers_(1000), nChan_(0), nsum_(0)daq_thread_(nullptr), stop_(false)
+    DAQ_Thread(zmq::context_t& context) : data_socket_(context, zmq::socket_type::push), reads_per_trigger_(1024), num_triggers_(1000), nsum_(0), nChan_(0), daq_thread_(nullptr), stop_(false)
     {
         data_socket_.bind ("tcp://*:5556");
     }
@@ -34,7 +34,7 @@ public:
 
         reads_per_trigger_ = reads_per_trigger;
         num_triggers_ = numTrigger;
-        nsum_ = nsum;
+        nsum_ = numSum;
 
         ltc_.configure(chipMask, chanMask, range, 0, reads_per_trigger_);
         ltc_.setReadDepth(reads_per_trigger_);
@@ -73,6 +73,7 @@ private:
 
     static void daq_thread(DAQ_Thread* self)
     {
+        std::cout << "nsum: " << self->nsum_ << std::endl;
         if(self->nsum_ == 0) daq_thread_all(self);
         else                 daq_thread_sum(self);
     }
@@ -93,7 +94,7 @@ private:
         while(self->ltc_.writeInProgress()) usleep(10);
 
         //DAQ loop
-        std::cout << "N events: " << self->num_triggers_ << std::endl;
+        std::cout << "All N events: " << self->num_triggers_ << std::endl;
         for(int iTrig = 0; iTrig < self->num_triggers_ || self->num_triggers_ < 0; ++iTrig)
         {
             if(self->stop_)
@@ -127,20 +128,20 @@ private:
 
     static void daq_thread_sum(DAQ_Thread* self)
     {
+        self->ltc_.setMode(0);
         while(self->ltc_.writeInProgress()) usleep(10);
-        
+
+        self->ltc_.enableRead(false);
         self->ltc_.reset();
-        self->ltc_.enableRead(true);
         self->ltc_.IRQReset();
 
-        self->ltc_.trigger();
-        
+        self->ltc_.enableRead(true);
+
+        self->ltc_.setMode(1);
         //self->ltc_.wait();
-        self->ltc_.IRQReset();
-        while(self->ltc_.writeInProgress()) usleep(10);
 
         //DAQ loop
-        std::cout << "N events: " << self->num_triggers_ << std::endl;
+        std::cout << "Sum N events: " << self->num_triggers_ << std::endl;
         for(int iTrig = 0; iTrig < self->num_triggers_ || self->num_triggers_ < 0; ++iTrig)
         {
             if(self->stop_)
@@ -153,13 +154,16 @@ private:
             zmq::message_t data (self->reads_per_trigger_*(self->nChan_+2)*sizeof(uint32_t));
 
             self->ltc_.waitIRQ();
-
+        
             // read data and send to client
-            self->ltc_.read(reinterpret_cast<uint32_t*>(data.data())); 
+            self->ltc_.read(reinterpret_cast<uint32_t*>(data.data()));
+            self->ltc_.IRQReset();
 
             self->data_socket_.send(std::move(data), zmq::send_flags::dontwait);
         }
 
+        self->ltc_.setMode(0);
+        
         for(int i = 0; i < 9; ++i)
         {
             std::cout << "FIFOOcc: " << i << "\t" << self->ltc_.getFIFOOcc(i) << std::endl;

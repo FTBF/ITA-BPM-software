@@ -21,6 +21,10 @@ UIO::UIO(const std::string& instance_id) : fd_(-100), size_(0)
 	//ERROR
 	std::cout << "ERROR" << std::endl;
     }
+
+    pfds_ = reinterpret_cast<pollfd*>(calloc(1, sizeof(struct pollfd)));
+    pfds_[0].fd = fd_;
+    pfds_[0].events = POLLIN;
 }
 
 UIO::UIO(const uint32_t& addr)

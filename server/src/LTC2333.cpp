@@ -1,8 +1,6 @@
 #include "LTC2333.h"
 #include <unistd.h>
 
-#include <iostream>
-
 LTC2333::LTC2333() : dma_buf_("udmabuf0"), dma_ctrl_("AXI-and-resets-axi-cdma-0", "udmabuf1"), read_(READ_NAME), write_(WRITE_NAME), interrupt_(INTR_NAME), nEvents_(0), chipMask_(0)
 {
     dma_buf_.syncOffset(0);
@@ -95,9 +93,9 @@ void LTC2333::reset()
     read_[0] = read_[0] | 0x1;
 }
 
-bool LTC2333::waitIRQ(const uint32_t& timeout)
+bool LTC2333::waitIRQ(const int& timeout)
 {
-    interrupt_.IRQWait();
+    interrupt_.IRQWait(timeout);
 
     return true;
 }
@@ -123,6 +121,7 @@ bool LTC2333::wait(const uint32_t& timeout)
 
 void LTC2333::IRQReset()
 {
+    waitIRQ(0); // clear outstanding interrupt
     interrupt_[3] = 0x1ff;
     interrupt_.IRQReset();
 }
